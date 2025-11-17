@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrainMap - See your mind. Grow your future.</title>
+    
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Google Fonts (Inter & Merriweather) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700;900&display=swap" rel="stylesheet">
+    
+    <!-- 3. D3.js (for graph visualization) -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    
+    <!-- 4. Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+    <!-- 5. Custom Styles & Tailwind Configuration -->
+    <style>
+        :root {
+            --color-indigo: #0f172a;
+            --color-teal: #14b8a6;
+            --color-gold: #facc15;
+            --color-light-gray: #f1f5f9;
+            --color-medium-gray: #64748b;
+        }
+
+        /* Font Configuration */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-indigo);
+            color: var(--color-light-gray);
+            overflow-x: hidden;
+        }
+        h1, h2, h3, h4, h5, h6, .font-headline {
+            font-family: 'Merriweather', serif;
+        }
+        .font-sans {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* D3 Graph Styles */
+        #graph-canvas svg {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        #graph-canvas svg:active {
+            cursor: grabbing;
+        }
+        .link {
+            stroke: #94a3b8; /* slate-400 */
+            stroke-opacity: 0.4;
+        }
+        .node {
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .node:hover {
+            transform: scale(1.1);
+        }
+        .node-label {
+            font-family: 'Inter', sans-serif;
+            font-size: 10px;
+            font-weight: 500;
+            fill: var(--color-light-gray);
+            pointer-events: none;
+            text-anchor: middle;
+            transform: translateY(16px);
+        }
+        .node-sublabel {
+            font-family: 'Inter', sans-serif;
+            font-size: 8px;
+            fill: var(--color-medium-gray);
+            pointer-events: none;
+            text-anchor: middle;
+            transform: translateY(26px);
+        }
+        
+        /* Node Type Styles */
+        .node-subject { fill: #c084fc; } /* purple-400 */
+        .node-topic { fill: #60a5fa; } /* blue-400 */
+        .node-subtopic { fill: var(--color-teal); }
+        .node-concept { fill: #fb923c; } /* orange-400 */
+
+        /* Unlocked/Highlight Styles */
+        .node-unlocked {
+            stroke: var(--color-gold);
+            stroke-width: 3px;
+        }
+        .node-highlight {
+            stroke: #f87171; /* red-400 */
+            stroke-width: 4px;
+        }
+        
+        /* Tooltip */
+        #graph-tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 9999;
+        }
+
+        /* Modal Backdrop */
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+        }
+
+        /* Heatmap */
+        .heatmap-cell {
+            transition: all 0.1s ease-in;
+        }
+        .heatmap-cell:hover {
+            stroke: white;
+            stroke-width: 1px;
+        }
+        
+        /* Confetti Animation */
+        .confetti-piece {
+            position: absolute;
+            width: 8px;
+            height: 16px;
+            background: #facc15;
+            top: 0;
+            opacity: 0;
+            animation: confetti-fall 3s linear forwards;
+        }
+        @keyframes confetti-fall {
+            0% {
+                transform: translate(0, -10vh) rotateZ(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translate(calc(var(--x-end) * 10vw), 110vh) rotateZ(var(--rotate-end)deg);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body class="antialiased">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-[9999] space-y-2"></div>
+    
+    <!-- Confetti Container -->
+    <div id="confetti-container" class="fixed inset-0 pointer-events-none z-[10000]"></div>
+
+    <!-- ===== HEADER / NAVIGATION ===== -->
+    <header class="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-md border-b border-slate-700">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-16">
+            <!-- Logo -->
+            <div class="flex items-center space-x-3">
+                <svg width="28" height="28" viewBox="0 0 118 118" fill="none" xmlns="http://www.w3.org/2000/svg" class="text-teal-400">
+                    <path d="M58.75 0C80.2238 0 97.5 17.2762 97.5 38.75C97.5 60.2238 80.2238 77.5 58.75 77.5C37.2762 77.5 20 60.2238 20 38.75C20 17.2762 37.2762 0 58.75 0Z" fill="currentColor"/>
+                    <path d="M78.75 58.75C91.9564 58.75 102.5 69.2936 102.5 82.5C102.5 95.7064 91.9564 106.25 78.75 106.25C65.5436 106.25 55 95.7064 55 82.5C55 69.2936 65.5436 58.75 78.75 58.75Z" fill="currentColor" fill-opacity="0.7"/>
+                    <path d="M38.75 78.75C45.3533 78.75 50.625 84.0217 50.625 90.625C50.625 97.2283 45.3533 102.5 38.75 102.5C32.1467 102.5 26.875 97.2283 26.875 90.625C26.875 84.0217 32.1467 78.75 38.75 78.75Z" fill="currentColor" fill-opacity="0.7"/>
+                </svg>
+                <span class="font-headline text-2xl font-bold text-white">BrainMap</span>
+            </div>
+            
+            <!-- Main Nav (for app views) -->
+            <div id="app-nav" class="hidden sm:flex items-center space-x-2 bg-slate-800 p-1 rounded-lg">
+                <button data-nav="canvas" class="nav-link nav-link-active px-3 py-1.5 text-sm font-medium text-white rounded-md">
+                    <i data-lucide="layout-grid" class="inline-block w-4 h-4 mr-1.5"></i>Canvas
+                </button>
+                <button data-nav="timeline" class="nav-link nav-link-inactive px-3 py-1.5 text-sm font-medium text-slate-300 hover:text-white rounded-md">
+                    <i data-lucide="bar-chart-3" class="inline-block w-4 h-4 mr-1.5"></i>Timeline
+                </button>
+                <button data-nav="projects" class="nav-link nav-link-inactive px-3 py-1.5 text-sm font-medium text-slate-300 hover:text-white rounded-md">
+                    <i data-lucide="lightbulb" class="inline-block w-4 h-4 mr-1.5"></i>Projects
+                </button>
+            </div>
+
+            <!-- User / Demo Account -->
+            <div class="flex items-center space-x-4">
+                <div class="text-right text-sm hidden sm:block">
+                    <div class="text-slate-300">Demo Account</div>
+                    <div class="text-white font-medium">Rup</div>
+                </div>
+                <img src="https://placehold.co/40x40/60a5fa/ffffff?text=R&font=merriweather" alt="User Avatar" class="w-10 h-10 rounded-full border-2 border-slate-600">
+                <button id="home-nav-button" data-nav="home" class="p-2 rounded-md hover:bg-slate-700 sm:hidden">
+                    <i data-lucide="home" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </nav>
+        
+        <!-- Mobile Nav -->
+        <div id="app-nav-mobile" class="hidden sm:hidden p-2 bg-slate-800">
+            <div class="flex justify-around items-center rounded-lg">
+                 <button data-nav="canvas" class="nav-link nav-link-active flex-1 px-3 py-2 text-sm font-medium text-white rounded-md">
+                    <i data-lucide="layout-grid" class="inline-block w-4 h-4 mr-1.5"></i>Canvas
+                </button>
+                <button data-nav="timeline" class="nav-link nav-link-inactive flex-1 px-3 py-2 text-sm font-medium text-slate-300 hover:text-white rounded-md">
+                    <i data-lucide="bar-chart-3" class="inline-block w-4 h-4 mr-1.5"></i>Timeline
+                </button>
+                <button data-nav="projects" class="nav-link nav-link-inactive flex-1 px-3 py-2 text-sm font-medium text-slate-300 hover:text-white rounded-md">
+                    <i data-lucide="lightbulb" class="inline-block w-4 h-4 mr-1.5"></i>Projects
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- ===== MAIN CONTENT AREA ===== -->
+    <main class="relative">
+
+        <!-- ===== VIEW 1: HOME / HERO ===== -->
+        <div data-view="home" class="relative overflow-hidden">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32 lg:py-48">
+                <div class="max-w-3xl mx-auto text-center">
+                    <h1 class="font-headline text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white">
+                        See your mind. <span class="text-teal-400">Grow your future.</span>
+                    </h1>
+                    <p class="mt-8 text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto">
+                        Turn scattered learning into a living brain — map concepts, attach evidence, track decay, and unlock new project ideas.
+                    </p>
+                    <div class="mt-12 flex items-center justify-center space-x-4">
+                        <button id="cta-try-demo" class="bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-3 px-6 rounded-lg text-lg shadow-lg transition duration-200">
+                            Try Demo BrainMap
+                        </button>
+                        <button id="cta-see-papers" class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-3 px-6 rounded-lg text-lg transition duration-200">
+                            See Paper Ideas
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <!-- Background Gradient -->
+            <div class="absolute inset-x-0 top-0 z-[-1] overflow-hidden blur-3xl" aria-hidden="true">
+                <div class="relative left-[calc(50%-11rem)] aspect-[1155/678] w-[36.125rem] -translate-x-1/2 rotate-[30deg] bg-gradient-to-tr from-[#14b8a6] to-[#60a5fa] opacity-20 sm:left-[calc(50%-30rem)] sm:w-[72.1875rem]" style="clip-path: polygon(74.1% 44.1%, 100% 61.6%, 97.5% 26.9%, 85.5% 0.1%, 80.7% 2%, 72.5% 32.5%, 60.2% 62.4%, 52.4% 68.1%, 47.5% 58.3%, 45.2% 34.5%, 27.5% 76.7%, 0.1% 64.9%, 17.9% 100%, 27.6% 76.8%, 76.1% 97.7%, 74.1% 44.1%)"></div>
+            </div>
+        </div>
+
+        <!-- ===== VIEW 2: BRAINMAP CANVAS (Main App) ===== -->
+        <div data-view="canvas" class="hidden h-[calc(100vh-64px)] w-screen flex flex-col sm:flex-row">
+            <!-- Left Controls & Stats -->
+            <div class="w-full sm:w-64 bg-slate-900 border-r border-slate-700 p-4 flex-shrink-0 space-y-4 overflow-y-auto">
+                <h3 class="font-headline text-lg text-white">Rup's BrainMap</h3>
+                
+                <!-- Stats -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-800 p-3 rounded-lg">
+                        <div class="text-xs text-slate-400">Total Nodes</div>
+                        <div id="stat-total-nodes" class="text-2xl font-bold text-white">0</div>
+                    </div>
+                    <div class="bg-slate-800 p-3 rounded-lg">
+                        <div class="text-xs text-slate-400">Avg. Mastery</div>
+                        <div id="stat-avg-mastery" class="text-2xl font-bold text-teal-400">0%</div>
+                    </div>
+                </div>
+
+                <!-- Progress -->
+                <div class="bg-slate-800 p-3 rounded-lg">
+                    <div class="flex justify-between items-center text-xs text-slate-400 mb-1">
+                        <span>Mode: <span class="font-medium text-white">Developer</span></span>
+                        <span class="text-yellow-400">35% to Scientist</span>
+                    </div>
+                    <div class="w-full bg-slate-700 rounded-full h-2.5">
+                        <div class="bg-yellow-400 h-2.5 rounded-full" style="width: 35%"></div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="space-y-2">
+                    <button id="btn-add-topic" class="w-full flex items-center justify-center bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-2 px-4 rounded-lg">
+                        <i data-lucide="plus" class="w-5 h-5 mr-2"></i>Add Node
+                    </button>
+                    <button id="btn-export-json" class="w-full flex items-center justify-center bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg">
+                        <i data-lucide="download" class="w-5 h-5 mr-2"></i>Export JSON
+                    </button>
+                    <button id="btn-export-png" class="w-full flex items-center justify-center bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg">
+                        <i data-lucide="image" class="w-5 h-5 mr-2"></i>Export PNG
+                    </button>
+                </div>
+                
+                <!-- Legend -->
+                <div>
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 mb-2">Legend</h4>
+                    <div class="space-y-1 text-xs">
+                        <div class="flex items-center"><span class="w-3 h-3 rounded-full bg-purple-400 mr-2"></span> Subject</div>
+                        <div class="flex items-center"><span class="w-3 h-3 rounded-full bg-blue-400 mr-2"></span> Topic</div>
+                        <div class="flex items-center"><span class="w-3 h-3 rounded-full bg-teal-400 mr-2"></span> Subtopic</div>
+                        <div class="flex items-center"><span class="w-3 h-3 rounded-full bg-orange-400 mr-2"></span> Concept</div>
+                        <div class="flex items-center"><span class="w-3 h-3 rounded-full border-2 border-yellow-400 mr-2"></span> Unlocked</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Graph Area -->
+            <div id="graph-canvas-container" class="flex-1 relative bg-slate-950/50">
+                <div id="graph-canvas" class="w-full h-full"></div>
+                <!-- Graph Tooltip -->
+                <div id="graph-tooltip"></div>
+            </div>
+
+            <!-- Right Side Panel (Node Details) -->
+            <div id="node-details-panel" class="absolute sm:relative right-0 top-0 h-full w-full sm:w-96 bg-slate-900 border-l border-slate-700 p-6 space-y-4 overflow-y-auto transform transition-transform duration-300 ease-in-out translate-x-full z-40">
+                <!-- Panel Header -->
+                <div class="flex justify-between items-center">
+                    <h3 id="panel-node-name" class="font-headline text-2xl text-white">Node Details</h3>
+                    <button id="btn-close-panel" class="text-slate-400 hover:text-white">
+                        <i data-lucide="x" class="w-6 h-6"></i>
+                    </button>
+                </div>
+                
+                <!-- Panel Content -->
+                <div>
+                    <div class="text-xs uppercase text-teal-400 font-semibold" id="panel-node-type">Topic</div>
+                    <p class="text-slate-300 mt-2" id="panel-node-description">Description loading...</p>
+                </div>
+
+                <!-- Mastery & Decay -->
+                <div class="bg-slate-800 p-4 rounded-lg">
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 mb-2">Mastery & Decay</h4>
+                    <div class="flex justify-between items-center text-xs text-slate-400 mb-1">
+                        <span>Mastery: <span id="panel-mastery-value" class="font-bold text-lg text-teal-400">75%</span></span>
+                        <span id="panel-last-practiced">Practiced: 3d ago</span>
+                    </div>
+                    <div class="w-full bg-slate-700 rounded-full h-2.5">
+                        <div id="panel-mastery-bar" class="bg-teal-500 h-2.5 rounded-full" style="width: 75%"></div>
+                    </div>
+                    
+                    <label for="decay-slider" class="block text-xs text-slate-400 mt-4 mb-1">Simulate Decay (days)</label>
+                    <input id="decay-slider" type="range" min="0" max="90" value="3" class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <!-- Actions -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-panel-practice" class="bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-3 rounded-lg text-sm flex items-center justify-center">
+                        <i data-lucide="zap" class="w-4 h-4 mr-1.5"></i>Practice
+                    </button>
+                     <button id="btn-panel-assessment" class="bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-3 rounded-lg text-sm flex items-center justify-center">
+                        <i data-lucide="clipboard-check" class="w-4 h-4 mr-1.5"></i>Assessment
+                    </button>
+                </div>
+
+                <!-- Unlock Requirements -->
+                <div id="panel-unlocks" class="bg-slate-800 p-4 rounded-lg space-y-2 hidden">
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 mb-2">Unlock Requirements</h4>
+                    <div class="flex items-center text-sm text-slate-300">
+                        <i data-lucide="check-circle" class="w-4 h-4 mr-2 text-teal-400"></i> 1 Reproducible Project
+                    </div>
+                    <div class="flex items-center text-sm text-slate-300">
+                        <i data-lucide="circle" class="w-4 h-4 mr-2 text-slate-500"></i> 2 Micro-assessments (1/2)
+                    </div>
+                </div>
+
+                <!-- Evidence -->
+                <div>
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 mb-2">Evidence (<span id="panel-evidence-count">0</span>)</h4>
+                    <ul id="panel-evidence-list" class="space-y-2">
+                        <!-- Evidence items will be populated here -->
+                    </ul>
+                </div>
+                
+                <!-- Subtopic Suggestions -->
+                <div>
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 mb-2">Suggested Subtopics</h4>
+                    <ul id="panel-subtopic-suggestions" class="space-y-2 text-sm text-slate-400">
+                        <li><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> Placeholder suggestion 1...</li>
+                        <li><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> Placeholder suggestion 2...</li>
+                        <li><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> Placeholder suggestion 3...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== VIEW 3: TIMELINE / MEMORY MAP ===== -->
+        <div data-view="timeline" class="hidden container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <h1 class="font-headline text-4xl text-white mb-8">Memory Map</h1>
+            
+            <div class="bg-slate-800 p-6 rounded-lg">
+                <h2 class="font-headline text-2xl text-white mb-4">Retention Heatmap</h2>
+                <p class="text-slate-300 mb-4">Simulated practice history for the last year. (Green = Strong Retention, Red = Decayed)</p>
+                <div id="heatmap-container" class="overflow-x-auto">
+                    <!-- Heatmap will be generated here -->
+                </div>
+            </div>
+            
+             <div class="bg-slate-800 p-6 rounded-lg mt-8">
+                <h2 class="font-headline text-2xl text-white mb-4">Recent Activity</h2>
+                <ul id="timeline-list" class="space-y-4">
+                   <!-- Timeline items will be populated here -->
+                </ul>
+            </div>
+        </div>
+
+        <!-- ===== VIEW 4: PROJECT & PAPER RECOMMENDATIONS ===== -->
+        <div data-view="projects" class="hidden container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <h1 class="font-headline text-4xl text-white mb-8">Project & Paper Recommendations</h1>
+            <p class="text-slate-300 mb-8 max-w-2xl">Based on your strongest and most recent nodes, here are some project ideas to synthesize your knowledge.</p>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="project-list">
+                <!-- Project cards will be populated here -->
+                <div class="bg-slate-800 rounded-lg p-6 shadow-lg">
+                    <h3 class="font-headline text-xl text-white mb-2">Real-time XAI for Medical Scans</h3>
+                    <p class="text-sm text-slate-300 mb-4">Develop a system that applies LIME/SHAP to live MRI/CT scan feeds to highlight anomalous regions for radiologists, explaining the "why" behind the flag.</p>
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase mb-2">Required Skills</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button data-highlight="s1" class="highlight-link text-xs bg-purple-600/50 text-purple-200 px-2 py-1 rounded">Explainable AI</button>
+                        <button data-highlight="s2" class="highlight-link text-xs bg-blue-600/50 text-blue-200 px-2 py-1 rounded">Medical Imaging</button>
+                        <button data-highlight="t3_1" class="highlight-link text-xs bg-teal-600/50 text-teal-200 px-2 py-1 rounded">Kalman Filters</button>
+                    </div>
+                </div>
+                
+                 <div class="bg-slate-800 rounded-lg p-6 shadow-lg">
+                    <h3 class="font-headline text-xl text-white mb-2">Generative Art from Brainwaves</h3>
+                    <p class="text-sm text-slate-300 mb-4">Use EEG signal processing to extract emotional states (valence, arousal) and feed them as latent variables into a StyleGAN to generate abstract art reflecting the user's mood.</p>
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase mb-2">Required Skills</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button data-highlight="s3" class="highlight-link text-xs bg-purple-600/50 text-purple-200 px-2 py-1 rounded">Signal Processing</button>
+                        <button data-highlight="s4" class="highlight-link text-xs bg-blue-600/50 text-blue-200 px-2 py-1 rounded">Data Visualization</button>
+                        <button data-highlight="s5" class="highlight-link text-xs bg-teal-600/50 text-teal-200 px-2 py-1 rounded">Cognitive Science</button>
+                    </div>
+                </div>
+                
+                 <div class="bg-slate-800 rounded-lg p-6 shadow-lg">
+                    <h3 class="font-headline text-xl text-white mb-2">RL-Powered Tutoring System</h3>
+                    <p class="text-sm text-slate-300 mb-4">Build a micro-assessment bot that uses Q-Learning (Reinforcement Learning) to optimize its question-selection policy, maximizing your learning rate by targeting decaying knowledge.</p>
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase mb-2">Required Skills</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button data-highlight="s6" class="highlight-link text-xs bg-purple-600/50 text-purple-200 px-2 py-1 rounded">Reinforcement Learning</button>
+                        <button data-highlight="t6_1" class="highlight-link text-xs bg-blue-600/50 text-blue-200 px-2 py-1 rounded">Q-Learning</button>
+                        <button data-highlight="t5_1" class="highlight-link text-xs bg-teal-600/50 text-teal-200 px-2 py-1 rounded">Learning Models</button>
+                    </div>
+                </div>
+                
+                 <div class="bg-slate-800 rounded-lg p-6 shadow-lg">
+                    <h3 class="font-headline text-xl text-white mb-2">Trustworthy AI in Autonomous Driving</h3>
+                    <p class="text-sm text-slate-300 mb-4">A research paper analyzing the intersection of Counterfactual Explanations (from XAI) and Markov Decision Processes (from RL) to create safer, more auditable navigation policies for autonomous vehicles.</p>
+                    <h4 class="text-xs font-semibold text-slate-400 uppercase mb-2">Required Skills</h4>
+                    <div class="flex flex-wrap gap-2">
+                        <button data-highlight="t1_2" class="highlight-link text-xs bg-purple-600/50 text-purple-200 px-2 py-1 rounded">Counterfactuals</button>
+                        <button data-highlight="t6_2" class="highlight-link text-xs bg-blue-600/50 text-blue-200 px-2 py-1 rounded">MDPs</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="bg-slate-900 border-t border-slate-700 mt-24">
+        <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Mission -->
+                <div>
+                    <h4 class="font-headline text-lg text-white">BrainMap</h4>
+                    <p class="text-sm text-slate-400 mt-2">Our mission is to help you see what you know, so you can decide what to learn next. Turn knowledge into opportunity.</p>
+                    <p class="text-xs text-teal-400 mt-4 font-semibold"><i data-lucide="lock" class="w-3 h-3 inline-block mr-1"></i> Data-first, local-first encryption.</p>
+                </div>
+                <!-- Newsletter -->
+                <div>
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 uppercase">Stay Updated</h4>
+                    <p class="text-sm text-slate-400 mt-2">Get project updates and research on learning theory.</p>
+                    <form class="mt-4 flex">
+                        <input type="email" placeholder="you@college.edu" class="flex-1 p-2 rounded-l-md bg-slate-700 border-slate-600 text-white placeholder-slate-400 text-sm">
+                        <button type="submit" class="p-2 bg-teal-500 text-slate-900 rounded-r-md font-bold text-sm">Subscribe</button>
+                    </form>
+                </div>
+                <!-- Links -->
+                <div>
+                    <h4 class="font-sans text-sm font-semibold text-slate-300 uppercase">Links</h4>
+                    <ul class="text-sm text-slate-400 mt-2 space-y-1">
+                        <li><a href="#" class="hover:text-white">About</a></li>
+                        <li><a href="#" class="hover:text-white">Research</a></li>
+                        <li><a href="#" class="hover:text-white">Contact</a></li>
+                        <li><a href="#" class="hover:text-white">Privacy Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="mt-8 border-t border-slate-700 pt-8 text-center text-xs text-slate-500">
+                &copy; 2025 BrainMap. All rights reserved. This is a fictional prototype.
+            </div>
+        </div>
+    </footer>
+
+
+    <!-- ===== MODAL: ADD NODE/EVIDENCE ===== -->
+    <div id="add-node-modal" class="fixed inset-0 z-[9990] flex items-center justify-center p-4 hidden">
+        <!-- Backdrop -->
+        <div class="modal-backdrop fixed inset-0"></div>
+        
+        <!-- Modal Content -->
+        <div class="relative bg-slate-800 w-full max-w-lg rounded-xl shadow-2xl p-6 z-10">
+            <button id="btn-close-add-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+            <h3 class="font-headline text-2xl text-white mb-4">Add New Node</h3>
+            
+            <form id="add-node-form" class="space-y-4">
+                <div>
+                    <label for="node-name" class="block text-sm font-medium text-slate-300 mb-1">Node Name</label>
+                    <input type="text" id="node-name" placeholder="e.g., 'Attention Mechanisms'" class="w-full p-2 rounded-md bg-slate-700 border-slate-600 text-white placeholder-slate-400">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="node-type" class="block text-sm font-medium text-slate-300 mb-1">Type</label>
+                        <select id="node-type" class="w-full p-2 rounded-md bg-slate-700 border-slate-600 text-white">
+                            <option value="subject">Subject</option>
+                            <option value="topic">Topic</option>
+                            <option value="subtopic" selected>Subtopic</option>
+                            <option value="concept">Concept</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="node-parent" class="block text-sm font-medium text-slate-300 mb-1">Parent Node</label>
+                        <select id="node-parent" class="w-full p-2 rounded-md bg-slate-700 border-slate-600 text-white">
+                            <!-- Parent nodes will be populated here -->
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="node-description" class="block text-sm font-medium text-slate-300 mb-1">Description</label>
+                    <textarea id="node-description" rows="3" placeholder="Short description of the concept..." class="w-full p-2 rounded-md bg-slate-700 border-slate-600 text-white placeholder-slate-400"></textarea>
+                </div>
+
+                <div>
+                    <label for="node-evidence-link" class="block text-sm font-medium text-slate-300 mb-1">Attach Evidence (Link)</label>
+                    <input type="text" id="node-evidence-link" placeholder="https://github.com/..." class="w-full p-2 rounded-md bg-slate-700 border-slate-600 text-white placeholder-slate-400">
+                </div>
+
+                <button id="btn-auto-suggest" type="button" class="w-full bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded-lg">
+                    <i data-lucide="wand-2" class="w-5 h-5 mr-2 inline-block"></i>Auto-suggest subtopics (LLM)
+                </button>
+                <div id="suggested-subtopics-list" class="text-sm text-slate-400 space-y-1 hidden">
+                    <!-- Suggested topics will appear here -->
+                </div>
+
+                <div class="pt-4 flex justify-end space-x-2">
+                    <button type="button" id="btn-cancel-add-modal" class="bg-slate-600 hover:bg-slate-500 text-white font-medium py-2 px-4 rounded-lg">Cancel</button>
+                    <button type="submit" class="bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-2 px-4 rounded-lg">Add Node</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- ===== MODAL: MICRO-ASSESSMENT ===== -->
+    <div id="assessment-modal" class="fixed inset-0 z-[9990] flex items-center justify-center p-4 hidden">
+        <!-- Backdrop -->
+        <div class="modal-backdrop fixed inset-0"></div>
+        
+        <!-- Modal Content -->
+        <div class="relative bg-slate-800 w-full max-w-2xl rounded-xl shadow-2xl p-6 z-10">
+            <button id="btn-close-assessment-modal" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-6 h-6"></i>
+            </button>
+            <h3 class="font-headline text-2xl text-white mb-2">Micro-Assessment</h3>
+            <p class="text-slate-300 mb-6">Test your mastery of: <span id="assessment-node-name" class="font-bold text-teal-400">Node Name</span></p>
+
+            <div id="assessment-content" class="space-y-6">
+                <!-- Question 1 -->
+                <div class="assessment-question">
+                    <h4 class="font-sans font-semibold text-slate-200 mb-2">1. What is the primary purpose of a Kalman Filter?</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q1" value="a" class="mr-3">
+                            <span class="text-sm text-slate-300">To smooth audio signals by removing noise.</span>
+                        </label>
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q1" value="b" class="mr-3">
+                            <span class="text-sm text-slate-300">To estimate the state of a dynamic system from noisy measurements.</span>
+                        </label>
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q1" value="c" class="mr-3">
+                            <span class="text-sm text-slate-300">To classify images based on pixel intensity.</span>
+                        </label>
+                    </div>
+                </div>
+                <!-- Question 2 -->
+                <div class="assessment-question">
+                    <h4 class="font-sans font-semibold text-slate-200 mb-2">2. The "predict" step in a Kalman Filter...</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q2" value="a" class="mr-3">
+                            <span class="text-sm text-slate-300">...uses the new measurement to correct the state.</span>
+                        </label>
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q2" value="b" class="mr-3">
+                            <span class="text-sm text-slate-300">...projects the current state estimate forward in time.</span>
+                        </label>
+                    </div>
+                </div>
+                <!-- Question 3 -->
+                <div class="assessment-question">
+                    <h4 class="font-sans font-semibold text-slate-200 mb-2">3. (True/False) A Kalman Filter assumes the system and measurement noise are Gaussian.</h4>
+                    <div class="space-y-2">
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q3" value="a" class="mr-3">
+                            <span class="text-sm text-slate-300">True</span>
+                        </label>
+                        <label class="flex items-center p-3 bg-slate-700 rounded-lg hover:bg-slate-600 cursor-pointer">
+                            <input type="radio" name="q3" value="b" class="mr-3">
+                            <span class="text-sm text-slate-300">False</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="assessment-results" class="hidden text-center">
+                <h3 classs="font-headline text-3xl text-white">Great job!</h3>
+                <p class="text-xl text-slate-300 mt-2">You scored: <span class="font-bold text-teal-400 text-2xl">3 / 3</span></p>
+                <p class="text-slate-300 mt-4">Mastery for <span id="assessment-result-node-name" class="font-bold text-white">Kalman Filters</span> has been increased!</p>
+                <button id="btn-close-assessment-results" class="mt-6 bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-2 px-6 rounded-lg">Done</button>
+            </div>
+
+            <div class="pt-6 flex justify-end">
+                <button id="btn-submit-assessment" class="bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-2 px-6 rounded-lg">Submit Answers</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ===== MODAL: TUTORIAL ===== -->
+    <div id="tutorial-modal" class="fixed inset-0 z-[9998] flex items-center justify-center p-4 hidden">
+        <!-- Backdrop -->
+        <div class="modal-backdrop fixed inset-0"></div>
+        
+        <!-- Modal Content -->
+        <div class="relative bg-slate-800 w-full max-w-lg rounded-xl shadow-2xl p-6 z-10">
+            <h3 class="font-headline text-2xl text-white mb-4">Welcome to BrainMap, Rup!</h3>
+            <p class="text-slate-300 mb-6">Here's a 60-second tour of your new brain.</p>
+            
+            <div class="space-y-4">
+                <div class="flex items-start space-x-3">
+                    <div class="bg-teal-500 text-slate-900 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
+                    <p class="text-slate-300"><b>Explore Your Canvas:</b> This is your knowledge graph. You can <span class="text-teal-400">drag nodes, zoom, and pan</span> to explore your subjects.</p>
+                </div>
+                <div class="flex items-start space-x-3">
+                    <div class="bg-teal-500 text-slate-900 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
+                    <p class="text-slate-300"><b>Inspect a Node:</b> <span class="text-teal-400">Click any node</span> (like "Explainable AI") to open the details panel, see evidence, and track mastery.</p>
+                </div>
+                 <div class="flex items-start space-x-3">
+                    <div class="bg-teal-500 text-slate-900 rounded-full w-6 h-6 flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
+                    <p class="text-slate-300"><b>Find New Ideas:</b> Visit the <span class="text-teal-400">"Projects" tab</span> to see what you can build with your current knowledge.</p>
+                </div>
+            </div>
+
+            <div class="pt-6 flex justify-end">
+                <button id="btn-close-tutorial" class="bg-teal-500 hover:bg-teal-400 text-slate-900 font-bold py-2 px-6 rounded-lg">Got it, let's start!</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ===== JAVASCRIPT APPLICATION LOGIC ===== -->
+    <script type="module">
+        // --- DATA ---
+        // Utility to get a random date in the past
+        const randomPastDate = (startDays, endDays) => {
+            const days = Math.floor(Math.random() * (endDays - startDays + 1)) + startDays;
+            const date = new Date();
+            date.setDate(date.getDate() - days);
+            return date.toISOString().split('T')[0];
+        };
+
+        const demoNodes = [
+            // S1: Explainable AI
+            { id: 's1', type: 'subject', name: 'Explainable AI', mastery: 85, lastPracticed: '2025-11-10', unlocked: true, description: 'Methods to understand and trust the results created by machine learning models.', evidence: [{ type: 'github', title: 'XAI-Implementations', url: '#' }, { type: 'youtube', title: 'A.I. Explainability - R. Gunning', url: '#' }] },
+            { id: 't1_1', type: 'topic', name: 'LIME & SHAP', parent: 's1', mastery: 70, lastPracticed: '2025-11-05', unlocked: true, description: 'Local and global surrogate models for model-agnostic explanations.' },
+            { id: 'c1_1_1', type: 'concept', name: 'SHAP Values', parent: 't1_1', mastery: 60, lastPracticed: '2025-10-20', unlocked: false, description: 'Game-theoretic approach to explaining the output of any machine learning model.' },
+            { id: 't1_2', type: 'topic', name: 'Counterfactuals', parent: 's1', mastery: 50, lastPracticed: '2025-09-15', unlocked: false, description: 'Explaining models by showing what would need to change to get a different output.' },
+
+            // S2: Medical Imaging
+            { id: 's2', type: 'subject', name: 'Medical Imaging', mastery: 75, lastPracticed: '2025-11-01', unlocked: true, description: 'Techniques and processes of creating visual representations of the interior of a body for clinical analysis.', evidence: [{ type: 'pdf', title: 'DICOM Standard Overview', url: '#' }] },
+            { id: 't2_1', type: 'topic', name: 'MRI Segmentation', parent: 's2', mastery: 65, lastPracticed: '2025-10-18', unlocked: true, description: 'Using models like U-Net to segment tumors or organs in MRI scans.' },
+            { id: 't2_2', type: 'topic', name: 'Image Registration', parent: 's2', mastery: 40, lastPracticed: '2025-08-01', unlocked: false, description: 'Aligning different medical images (e.g., MRI to CT).' },
+
+            // S3: Signal Processing
+            { id: 's3', type: 'subject', name: 'Signal Processing', mastery: 90, lastPracticed: '2025-11-12', unlocked: true, description: 'Analyzing, modifying, or synthesizing signals such as sound, images, and biological measurements.', evidence: [{ type: 'notes', title: 'Lecture Notes - DSP', url: '#' }] },
+            { id: 't3_1', type: 'topic', name: 'Kalman Filters', parent: 's3', mastery: 80, lastPracticed: '2025-11-12', unlocked: true, description: 'Optimal recursive data processing algorithm for estimating system states from noisy measurements.' },
+            { id: 't3_2', type: 'topic', name: 'Fourier Transform', parent: 's3', mastery: 95, lastPracticed: '2025-11-08', unlocked: true, description: 'Decomposing a signal into its constituent frequencies.' },
+
+            // S4: Data Visualization
+            { id: 's4', type: 'subject', name: 'Data Visualization', mastery: 60, lastPracticed: '2025-10-01', unlocked: true, description: 'The graphical representation of information and data.', evidence: [{ type: 'youtube', title: 'The Grammar of Graphics - L. Wilkinson', url: '#' }] },
+            { id: 't4_1', type: 'topic', name: 'D3.js', parent: 's4', mastery: 55, lastPracticed: '2025-10-01', unlocked: false, description: 'A JavaScript library for manipulating documents based on data.' },
+            { id: 't4_2', type: 'topic', name: 'Perceptual Rules', parent: 's4', mastery: 65, lastPracticed: '2025-09-20', unlocked: true, description: 'How humans perceive visual information (e.g., color, shape, position).' },
+
+            // S5: Cognitive Science
+            { id: 's5', type: 'subject', name: 'Cognitive Science', mastery: 30, lastPracticed: '2025-06-10', unlocked: false, description: 'The interdisciplinary, scientific study of the mind and its processes.' },
+            { id: 't5_1', type: 'topic', name: 'Learning Models', parent: 's5', mastery: 35, lastPracticed: '2025-06-10', unlocked: false, description: 'Theories on how humans and animals learn, including reinforcement and spaced repetition.' },
+
+            // S6: Reinforcement Learning
+            { id: 's6', type: 'subject', name: 'Reinforcement Learning', mastery: 70, lastPracticed: '2025-11-02', unlocked: true, description: 'An area of machine learning concerned with how intelligent agents ought to take actions in an environment to maximize cumulative reward.', evidence: [{ type: 'github', title: 'RL-Baselines', url: '#' }] },
+            { id: 't6_1', type: 'topic', name: 'Q-Learning', parent: 's6', mastery: 75, lastPracticed: '2025-11-02', unlocked: true, description: 'A model-free RL algorithm to learn a policy telling an agent what action to take.' },
+            { id: 't6_2', type: 'topic', name: 'Markov Decision Processes (MDPs)', parent: 's6', mastery: 65, lastPracticed: '2025-10-15', unlocked: true, description: 'Mathematical framework for modeling decision making in situations where outcomes are partly random and partly under the control of a decision maker.' },
+        ];
+
+        const demoLinks = demoNodes
+            .filter(n => n.parent)
+            .map(n => ({ source: n.parent, target: n.id }));
+
+        // --- STATE ---
+        let appState = {
+            currentView: 'home',
+            nodes: demoNodes,
+            links: demoLinks,
+            selectedNode: null,
+            simulation: null,
+            svg: null,
+            graphG: null,
+            linkElements: null,
+            nodeElements: null,
+            graphInitialized: false,
+        };
+
+        // --- DOM ELEMENTS ---
+        const dom = {
+            header: document.querySelector('header'),
+            views: document.querySelectorAll('[data-view]'),
+            navLinks: document.querySelectorAll('.nav-link'),
+            appNav: document.getElementById('app-nav'),
+            appNavMobile: document.getElementById('app-nav-mobile'),
+            homeNavButton: document.getElementById('home-nav-button'),
+            ctaTryDemo: document.getElementById('cta-try-demo'),
+            ctaSeePapers: document.getElementById('cta-see-papers'),
+            // Canvas
+            canvasView: document.querySelector('[data-view="canvas"]'),
+            graphCanvas: document.getElementById('graph-canvas'),
+            graphTooltip: document.getElementById('graph-tooltip'),
+            statTotalNodes: document.getElementById('stat-total-nodes'),
+            statAvgMastery: document.getElementById('stat-avg-mastery'),
+            // Node Panel
+            nodePanel: document.getElementById('node-details-panel'),
+            btnClosePanel: document.getElementById('btn-close-panel'),
+            panelNodeName: document.getElementById('panel-node-name'),
+            panelNodeType: document.getElementById('panel-node-type'),
+            panelNodeDescription: document.getElementById('panel-node-description'),
+            panelMasteryValue: document.getElementById('panel-mastery-value'),
+            panelMasteryBar: document.getElementById('panel-mastery-bar'),
+            panelLastPracticed: document.getElementById('panel-last-practiced'),
+            decaySlider: document.getElementById('decay-slider'),
+            panelEvidenceCount: document.getElementById('panel-evidence-count'),
+            panelEvidenceList: document.getElementById('panel-evidence-list'),
+            panelSubtopicSuggestions: document.getElementById('panel-subtopic-suggestions'),
+            panelUnlocks: document.getElementById('panel-unlocks'),
+            btnPanelPractice: document.getElementById('btn-panel-practice'),
+            btnPanelAssessment: document.getElementById('btn-panel-assessment'),
+            // Add Node Modal
+            addNodeModal: document.getElementById('add-node-modal'),
+            btnAddTopic: document.getElementById('btn-add-topic'),
+            btnCloseAddModal: document.getElementById('btn-close-add-modal'),
+            btnCancelAddModal: document.getElementById('btn-cancel-add-modal'),
+            addNodeForm: document.getElementById('add-node-form'),
+            nodeParentSelect: document.getElementById('node-parent'),
+            btnAutoSuggest: document.getElementById('btn-auto-suggest'),
+            suggestedSubtopicsList: document.getElementById('suggested-subtopics-list'),
+            // Assessment Modal
+            assessmentModal: document.getElementById('assessment-modal'),
+            btnCloseAssessmentModal: document.getElementById('btn-close-assessment-modal'),
+            assessmentNodeName: document.getElementById('assessment-node-name'),
+            assessmentContent: document.getElementById('assessment-content'),
+            assessmentResults: document.getElementById('assessment-results'),
+            assessmentResultNodeName: document.getElementById('assessment-result-node-name'),
+            btnSubmitAssessment: document.getElementById('btn-submit-assessment'),
+            btnCloseAssessmentResults: document.getElementById('btn-close-assessment-results'),
+            // Tutorial Modal
+            tutorialModal: document.getElementById('tutorial-modal'),
+            btnCloseTutorial: document.getElementById('btn-close-tutorial'),
+            // Timeline
+            heatmapContainer: document.getElementById('heatmap-container'),
+            timelineList: document.getElementById('timeline-list'),
+            // Projects
+            projectList: document.getElementById('project-list'),
+            // Export
+            btnExportJson: document.getElementById('btn-export-json'),
+            btnExportPng: document.getElementById('btn-export-png'),
+            // Toast
+            toastContainer: document.getElementById('toast-container'),
+        };
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("BrainMap Prototype Initializing...");
+            initEventListeners();
+            updateStats();
+            populateParentSelector();
+            renderView('home');
+            lucide.createIcons();
+            
+            // Show tutorial for first-time demo
+            setTimeout(() => {
+                toggleModal(dom.tutorialModal, true);
+            }, 1000);
+        });
+
+        function initEventListeners() {
+            // Navigation
+            dom.navLinks.forEach(link => {
+                link.addEventListener('click', () => navigate(link.dataset.nav));
+            });
+            dom.homeNavButton.addEventListener('click', () => navigate('home'));
+            dom.ctaTryDemo.addEventListener('click', () => navigate('canvas'));
+            dom.ctaSeePapers.addEventListener('click', () => navigate('projects'));
+
+            // Node Panel
+            dom.btnClosePanel.addEventListener('click', closeNodePanel);
+            dom.decaySlider.addEventListener('input', simulateDecay);
+            dom.btnPanelPractice.addEventListener('click', handlePractice);
+            dom.btnPanelAssessment.addEventListener('click', openAssessmentModal);
+
+            // Add Node Modal
+            dom.btnAddTopic.addEventListener('click', () => toggleModal(dom.addNodeModal, true));
+            dom.btnCloseAddModal.addEventListener('click', () => toggleModal(dom.addNodeModal, false));
+            dom.btnCancelAddModal.addEventListener('click', () => toggleModal(dom.addNodeModal, false));
+            dom.addNodeForm.addEventListener('submit', handleAddNode);
+            dom.btnAutoSuggest.addEventListener('click', handleAutoSuggest);
+
+            // Assessment Modal
+            dom.btnCloseAssessmentModal.addEventListener('click', () => toggleModal(dom.assessmentModal, false));
+            dom.btnSubmitAssessment.addEventListener('click', handleSubmitAssessment);
+            dom.btnCloseAssessmentResults.addEventListener('click', () => {
+                toggleModal(dom.assessmentModal, false);
+                // Reset modal
+                dom.assessmentContent.classList.remove('hidden');
+                dom.btnSubmitAssessment.classList.remove('hidden');
+                dom.assessmentResults.classList.add('hidden');
+            });
+            
+            // Tutorial Modal
+            dom.btnCloseTutorial.addEventListener('click', () => {
+                toggleModal(dom.tutorialModal, false);
+            });
+            
+            // Export
+            dom.btnExportJson.addEventListener('click', exportJSON);
+            dom.btnExportPng.addEventListener('click', exportPNG);
+            
+            // Project Highlights
+            dom.projectList.addEventListener('click', handleProjectHighlight);
+        }
+
+        // --- VIEW & NAVIGATION ---
+        function navigate(view) {
+            if (view === appState.currentView) return;
+
+            console.log(`Navigating to: ${view}`);
+            appState.currentView = view;
+            renderView(view);
+        }
+
+        function renderView(view) {
+            // Hide all views
+            dom.views.forEach(v => v.classList.add('hidden'));
+
+            // Show the target view
+            const targetView = document.querySelector(`[data-view="${view}"]`);
+            if (targetView) {
+                targetView.classList.remove('hidden');
+            }
+
+            // Handle App vs Home UI
+            if (view === 'home') {
+                dom.appNav.classList.add('hidden');
+                dom.appNavMobile.classList.add('hidden');
+                dom.homeNavButton.classList.remove('sm:hidden');
+                dom.header.classList.remove('sm:h-16');
+            } else {
+                dom.appNav.classList.remove('hidden');
+                dom.appNavMobile.classList.remove('hidden');
+                dom.homeNavButton.classList.add('sm:hidden');
+                dom.header.classList.add('sm:h-auto', 'sm:h-16');
+
+                // Update active nav link
+                dom.navLinks.forEach(link => {
+                    link.classList.toggle('nav-link-active', link.dataset.nav === view);
+                    link.classList.toggle('nav-link-inactive', link.dataset.nav !== view);
+                });
+            }
+            
+            // Handle view-specific initializations
+            if (view === 'canvas') {
+                if (!appState.graphInitialized) {
+                    // Use timeout to ensure canvas is rendered
+                    setTimeout(initGraph, 0);
+                    appState.graphInitialized = true;
+                }
+                // Check if panel should be open
+                if (appState.selectedNode) {
+                    dom.nodePanel.classList.remove('translate-x-full');
+                } else {
+                    dom.nodePanel.classList.add('translate-x-full');
+                }
+            }
+            
+            if (view === 'timeline') {
+                renderTimeline();
+                renderHeatmap();
+            }
+            
+            if (view === 'projects') {
+                // Already rendered statically, but logic could go here
+            }
+        }
+
+        // --- D3 GRAPH VISUALIZATION ---
+        function initGraph() {
+            console.log("Initializing D3 Graph...");
+            const container = dom.graphCanvas;
+            if (!container) {
+                console.error("Graph container not found");
+                return;
+            }
+            
+            container.innerHTML = ''; // Clear previous
+            
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            appState.svg = d3.select(container).append("svg")
+                .attr("viewBox", [0, 0, width, height]);
+
+            appState.graphG = appState.svg.append("g");
+
+            appState.linkElements = appState.graphG.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(appState.links)
+                .enter().append("line")
+                .attr("class", "link");
+
+            appState.nodeElements = appState.graphG.append("g")
+                .attr("class", "nodes")
+                .selectAll("g")
+                .data(appState.nodes, d => d.id)
+                .enter().append("g")
+                .attr("class", "node")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+            
+            // Add circle
+            appState.nodeElements.append("circle")
+                .attr("r", d => getNodeRadius(d.type))
+                .attr("class", d => `node-${d.type} ${d.unlocked ? 'node-unlocked' : ''}`)
+                .on("click", nodeClicked)
+                .on("mouseover", nodeMouseOver)
+                .on("mouseout", nodeMouseOut);
+
+            // Add label
+            appState.nodeElements.append("text")
+                .attr("class", "node-label")
+                .text(d => d.name);
+                
+            // Add sub-label (mastery)
+            appState.nodeElements.append("text")
+                .attr("class", "node-sublabel")
+                .text(d => `${d.mastery}%`);
+
+            // Force simulation
+            appState.simulation = d3.forceSimulation(appState.nodes)
+                .force("link", d3.forceLink(appState.links).id(d => d.id).distance(d => d.source.type === 'subject' ? 120 : 60))
+                .force("charge", d3.forceManyBody().strength(-200))
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .on("tick", ticked);
+
+            // Zoom
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on("zoom", (event) => {
+                    appState.graphG.attr("transform", event.transform);
+                });
+            appState.svg.call(zoom);
+
+            function ticked() {
+                appState.linkElements
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                appState.nodeElements
+                    .attr("transform", d => `translate(${d.x},${d.y})`);
+            }
+
+            function dragstarted(event, d) {
+                if (!event.active) appState.simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+                hideTooltip();
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) appState.simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+        
+        function updateGraph() {
+            if (!appState.simulation) return;
+
+            // Update node data
+            appState.nodeElements = appState.nodeElements
+                .data(appState.nodes, d => d.id);
+            
+            // Exit old nodes
+            appState.nodeElements.exit().remove();
+            
+            // Enter new nodes
+            const nodeEnter = appState.nodeElements
+                .enter().append("g")
+                .attr("class", "node")
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+            
+            nodeEnter.append("circle")
+                .attr("r", d => getNodeRadius(d.type))
+                .attr("class", d => `node-${d.type} ${d.unlocked ? 'node-unlocked' : ''}`)
+                .on("click", nodeClicked)
+                .on("mouseover", nodeMouseOver)
+                .on("mouseout", nodeMouseOut);
+
+            nodeEnter.append("text")
+                .attr("class", "node-label")
+                .text(d => d.name);
+                
+            nodeEnter.append("text")
+                .attr("class", "node-sublabel")
+                .text(d => `${d.mastery}%`);
+                
+            appState.nodeElements = nodeEnter.merge(appState.nodeElements);
+
+            // Update link data
+            appState.linkElements = appState.linkElements
+                .data(appState.links);
+                
+            // Exit old links
+            appState.linkElements.exit().remove();
+            
+            // Enter new links
+            appState.linkElements = appState.linkElements
+                .enter().append("line")
+                .attr("class", "link")
+                .merge(appState.linkElements);
+            
+            // Update simulation
+            appState.simulation.nodes(appState.nodes);
+            appState.simulation.force("link").links(appState.links);
+            appState.simulation.alpha(1).restart();
+            
+            function dragstarted(event, d) {
+                if (!event.active) appState.simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+                hideTooltip();
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) appState.simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        }
+
+        function getNodeRadius(type) {
+            switch(type) {
+                case 'subject': return 20;
+                case 'topic': return 15;
+                case 'subtopic': return 10;
+                case 'concept': return 8;
+                default: return 10;
+            }
+        }
+        
+        function nodeClicked(event, d) {
+            event.stopPropagation();
+            openNodePanel(d);
+        }
+        
+        function nodeMouseOver(event, d) {
+            d3.select(this).transition().duration(100).attr("r", getNodeRadius(d.type) * 1.2);
+            showTooltip(event, d);
+        }
+        
+        function nodeMouseOut(event, d) {
+            d3.select(this).transition().duration(100).attr("r", getNodeRadius(d.type));
+            hideTooltip();
+        }
+
+        function showTooltip(event, d) {
+            dom.graphTooltip.style.opacity = 1;
+            dom.graphTooltip.innerHTML = `
+                <div class="font-bold">${d.name}</div>
+                <div>Mastery: ${d.mastery}%</div>
+                <div>Evidence: ${d.evidence?.length || 0}</div>
+            `;
+            dom.graphTooltip.style.left = `${event.pageX + 10}px`;
+            dom.graphTooltip.style.top = `${event.pageY - 10}px`;
+        }
+        
+        function hideTooltip() {
+            dom.graphTooltip.style.opacity = 0;
+        }
+
+        // --- NODE PANEL ---
+        function openNodePanel(nodeData) {
+            appState.selectedNode = nodeData;
+            console.log("Selected node:", nodeData);
+            
+            dom.panelNodeName.textContent = nodeData.name;
+            dom.panelNodeType.textContent = nodeData.type;
+            dom.panelNodeDescription.textContent = nodeData.description || "No description provided.";
+            
+            updatePanelMastery(nodeData.mastery);
+            
+            const daysAgo = Math.round((new Date() - new Date(nodeData.lastPracticed)) / (1000 * 60 * 60 * 24));
+            dom.panelLastPracticed.textContent = `Practiced: ${daysAgo}d ago`;
+            dom.decaySlider.value = daysAgo;
+
+            // Populate Evidence
+            const evidence = nodeData.evidence || [];
+            dom.panelEvidenceCount.textContent = evidence.length;
+            dom.panelEvidenceList.innerHTML = '';
+            if (evidence.length > 0) {
+                evidence.forEach(item => {
+                    const icon = getEvidenceIcon(item.type);
+                    const li = document.createElement('li');
+                    li.className = "flex items-center text-sm bg-slate-800 p-2 rounded-md";
+                    li.innerHTML = `
+                        <i data-lucide="${icon}" class="w-4 h-4 mr-2 text-teal-400 flex-shrink-0"></i>
+                        <a href="${item.url}" target="_blank" class="truncate text-slate-300 hover:text-white" title="${item.title}">${item.title}</a>
+                    `;
+                    dom.panelEvidenceList.appendChild(li);
+                });
+            } else {
+                dom.panelEvidenceList.innerHTML = `<li class="text-sm text-slate-500">No evidence attached.</li>`;
+            }
+            
+            // Show/Hide Unlocks
+            if (nodeData.type === 'concept' && !nodeData.unlocked) {
+                dom.panelUnlocks.classList.remove('hidden');
+            } else {
+                dom.panelUnlocks.classList.add('hidden');
+            }
+            
+            // Populate suggestions (static)
+            dom.panelSubtopicSuggestions.innerHTML = `
+                <li class="flex items-center text-sm text-slate-400 hover:text-white cursor-pointer"><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> ${nodeData.name} & Game Theory</li>
+                <li class="flex items-center text-sm text-slate-400 hover:text-white cursor-pointer"><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> Applications in finance</li>
+                <li class="flex items-center text-sm text-slate-400 hover:text-white cursor-pointer"><i data-lucide="plus-circle" class="w-4 h-4 inline-block mr-2 text-teal-500"></i> Real-time implementation</li>
+            `;
+
+            lucide.createIcons();
+            
+            dom.nodePanel.classList.remove('translate-x-full');
+            
+            // Highlight selected node in graph
+            appState.nodeElements.selectAll('circle')
+                .classed('node-highlight', d => d.id === nodeData.id);
+        }
+
+        function closeNodePanel() {
+            dom.nodePanel.classList.add('translate-x-full');
+            appState.selectedNode = null;
+            
+            // Remove highlight
+            appState.nodeElements.selectAll('circle')
+                .classed('node-highlight', false);
+        }
+        
+        function getEvidenceIcon(type) {
+            switch(type) {
+                case 'github': return 'github';
+                case 'youtube': return 'youtube';
+                case 'pdf': return 'file-text';
+                case 'notes': return 'notebook';
+                default: return 'link';
+            }
+        }
+        
+        function updatePanelMastery(mastery) {
+            mastery = Math.round(mastery);
+            dom.panelMasteryValue.textContent = `${mastery}%`;
+            dom.panelMasteryBar.style.width = `${mastery}%`;
+            
+            // Update node sublabel in D3 graph
+            if (appState.selectedNode) {
+                appState.nodeElements.selectAll(".node-sublabel")
+                    .text(d => d.id === appState.selectedNode.id ? `${mastery}%` : `${d.mastery}%`);
+            }
+        }
+        
+        function simulateDecay(e) {
+            if (!appState.selectedNode) return;
+            
+            const days = parseInt(e.target.value);
+            const originalMastery = appState.selectedNode.mastery;
+            // Simple decay model: lose 0.5% mastery per day, floor at 10
+            const decayedMastery = Math.max(10, originalMastery - (days * 0.5));
+            
+            updatePanelMastery(decayedMastery);
+        }
+        
+        function handlePractice() {
+            if (!appState.selectedNode) return;
+            
+            // Simulate practice
+            const node = appState.selectedNode;
+            const newMastery = Math.min(100, node.mastery + 15);
+            node.mastery = newMastery;
+            node.lastPracticed = new Date().toISOString().split('T')[0];
+            
+            openNodePanel(node); // Refresh panel
+            updateStats();
+            showToast("Practice logged! Mastery increased.", "success");
+            
+            // Check for unlock
+            if (newMastery > 85 && !node.unlocked) {
+                node.unlocked = true;
+                showToast(`Node Unlocked: ${node.name}!`, "gold");
+                runConfetti();
+                // Update node visual
+                appState.nodeElements.selectAll('circle')
+                    .filter(d => d.id === node.id)
+                    .classed('node-unlocked', true);
+            }
+        }
+
+        // --- MODALS (ADD, ASSESSMENT, TUTORIAL) ---
+        function toggleModal(modal, show) {
+            if (show) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+        
+        function populateParentSelector() {
+            dom.nodeParentSelect.innerHTML = '';
+            appState.nodes.forEach(node => {
+                if (node.type !== 'concept') { // Can't parent to a concept
+                    const option = document.createElement('option');
+                    option.value = node.id;
+                    option.textContent = `${node.name} (${node.type})`;
+                    dom.nodeParentSelect.appendChild(option);
+                }
+            });
+        }
+        
+        function handleAddNode(e) {
+            e.preventDefault();
+            const form = e.target;
+            const name = form['node-name'].value;
+            const type = form['node-type'].value;
+            const parent = form['node-parent'].value;
+            const description = form['node-description'].value;
+            const evidenceLink = form['node-evidence-link'].value;
+            
+            if (!name || !type || !parent) {
+                showToast("Please fill in name, type, and parent.", "error");
+                return;
+            }
+            
+            const newNode = {
+                id: `n_${Date.now()}`,
+                type: type,
+                name: name,
+                parent: parent,
+                mastery: 10,
+                lastPracticed: new Date().toISOString().split('T')[0],
+                unlocked: false,
+                description: description,
+                evidence: []
+            };
+            
+            if (evidenceLink) {
+                newNode.evidence.push({ type: 'link', title: evidenceLink, url: evidenceLink });
+            }
+            
+            // Add to state
+            appState.nodes.push(newNode);
+            appState.links.push({ source: parent, target: newNode.id });
+            
+            // Update UI
+            updateGraph();
+            updateStats();
+            populateParentSelector();
+            
+            form.reset();
+            dom.suggestedSubtopicsList.classList.add('hidden');
+            dom.suggestedSubtopicsList.innerHTML = '';
+            toggleModal(dom.addNodeModal, false);
+            showToast("Node added successfully!", "success");
+        }
+        
+        function handleAutoSuggest() {
+            dom.suggestedSubtopicsList.classList.remove('hidden');
+            dom.suggestedSubtopicsList.innerHTML = `
+                <p class="text-xs text-slate-400">LLM draft results:</p>
+                <p class="p-1 hover:bg-slate-700 rounded cursor-pointer">+ 'Suggested Subtopic A'</p>
+                <p class="p-1 hover:bg-slate-700 rounded cursor-pointer">+ 'Suggested Subtopic B'</p>
+                <p class="p-1 hover:bg-slate-700 rounded cursor-pointer">+ 'Suggested Subtopic C'</p>
+            `;
+        }
+        
+        function openAssessmentModal() {
+            if (!appState.selectedNode) return;
+            
+            dom.assessmentNodeName.textContent = appState.selectedNode.name;
+            dom.assessmentResultNodeName.textContent = appState.selectedNode.name;
+            
+            // Reset state
+            dom.assessmentContent.classList.remove('hidden');
+            dom.btnSubmitAssessment.classList.remove('hidden');
+            dom.assessmentResults.classList.add('hidden');
+            
+            // Clear radio buttons
+            dom.assessmentModal.querySelectorAll('input[type="radio"]').forEach(radio => radio.checked = false);
+            
+            // In a real app, you'd fetch questions for this node
+            // Here we just show the modal
+            toggleModal(dom.assessmentModal, true);
+        }
+        
+        function handleSubmitAssessment() {
+            // Fake scoring
+            showToast("Assessment submitted!", "success");
+            
+            // Show results
+            dom.assessmentContent.classList.add('hidden');
+            dom.btnSubmitAssessment.classList.add('hidden');
+            dom.assessmentResults.classList.remove('hidden');
+            
+            // Update mastery (simulated)
+            if (appState.selectedNode) {
+                const node = appState.selectedNode;
+                const newMastery = Math.min(100, node.mastery + 25); // Big boost for assessment
+                node.mastery = newMastery;
+                node.lastPracticed = new Date().toISOString().split('T')[0];
+                openNodePanel(node); // Refresh panel
+                updateStats();
+            }
+        }
+
+        // --- OTHER VIEWS (TIMELINE, PROJECTS) ---
+        function renderTimeline() {
+            dom.timelineList.innerHTML = '';
+            const sortedNodes = [...appState.nodes].sort((a, b) => new Date(b.lastPracticed) - new Date(a.lastPracticed));
+            
+            sortedNodes.slice(0, 10).forEach(node => {
+                const daysAgo = Math.round((new Date() - new Date(node.lastPracticed)) / (1000 * 60 * 60 * 24));
+                const li = document.createElement('li');
+                li.className = "flex items-center p-4 bg-slate-700 rounded-lg";
+                li.innerHTML = `
+                    <span class="w-10 h-10 rounded-full node-${node.type} flex items-center justify-center font-bold text-slate-900 text-sm mr-4">${node.mastery}%</span>
+                    <div>
+                        <div class="font-medium text-white">${node.name}</div>
+                        <div class="text-sm text-slate-400">Practiced ${daysAgo} days ago</div>
+                    </div>
+                `;
+                dom.timelineList.appendChild(li);
+            });
+        }
+        
+        function renderHeatmap() {
+            dom.heatmapContainer.innerHTML = '';
+            const weeks = 53;
+            const days = 7;
+            const cellSize = 12;
+            const gap = 3;
+            const width = (cellSize + gap) * weeks;
+            const height = (cellSize + gap) * days;
+            
+            const svg = d3.create("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .attr("viewBox", [0, 0, width, height]);
+
+            const g = svg.selectAll("g")
+                .data(d3.range(weeks))
+                .enter().append("g")
+                .attr("transform", (d, i) => `translate(${i * (cellSize + gap)}, 0)`);
+
+            g.selectAll("rect")
+                .data(d => d3.range(days).map(i => ({ week: d, day: i })))
+                .enter().append("rect")
+                .attr("width", cellSize)
+                .attr("height", cellSize)
+                .attr("y", d => d.day * (cellSize + gap))
+                .attr("fill", d => {
+                    const r = Math.random();
+                    if (r < 0.1) return '#dc2626'; // red-600
+                    if (r < 0.3) return '#facc15'; // yellow-400
+                    if (r < 0.7) return '#10b981'; // emerald-500
+                    return '#374151'; // gray-700
+                })
+                .attr("rx", 3)
+                .attr("ry", 3)
+                .attr("class", "heatmap-cell");
+                
+            dom.heatmapContainer.appendChild(svg.node());
+        }
+        
+        function handleProjectHighlight(e) {
+            const button = e.target.closest('.highlight-link');
+            if (!button) return;
+            
+            const nodeId = button.dataset.highlight;
+            
+            // Navigate to canvas
+            navigate('canvas');
+            
+            // Highlight the node
+            setTimeout(() => { // Ensure D3 is ready
+                appState.nodeElements.selectAll('circle')
+                    .classed('node-highlight', d => d.id === nodeId)
+                    .transition().duration(500)
+                    .attr('r', d => d.id === nodeId ? getNodeRadius(d.type) * 1.5 : getNodeRadius(d.type))
+                    .transition().duration(500)
+                    .attr('r', d => getNodeRadius(d.type));
+                    
+                const nodeData = appState.nodes.find(n => n.id === nodeId);
+                if (nodeData) {
+                    openNodePanel(nodeData);
+                }
+            }, 100);
+        }
+
+        // --- UTILITIES ---
+        function updateStats() {
+            dom.statTotalNodes.textContent = appState.nodes.length;
+            
+            const totalMastery = appState.nodes.reduce((acc, node) => acc + node.mastery, 0);
+            const avgMastery = appState.nodes.length > 0 ? Math.round(totalMastery / appState.nodes.length) : 0;
+            dom.statAvgMastery.textContent = `${avgMastery}%`;
+        }
+        
+        function exportJSON() {
+            const dataStr = JSON.stringify({ nodes: appState.nodes, links: appState.links }, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "brainmap_export.json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("Exporting BrainMap as JSON...", "success");
+        }
+
+        function exportPNG() {
+            // This is a complex operation. For a prototype, we just show a message.
+            showToast("PNG snapshot download initiated. (Prototype)", "info");
+        }
+        
+        function showToast(message, type = "info") {
+            const toast = document.createElement('div');
+            let bgColor, textColor, icon;
+            
+            switch(type) {
+                case "success":
+                    bgColor = "bg-teal-500";
+                    textColor = "text-white";
+                    icon = "check-circle";
+                    break;
+                case "error":
+                    bgColor = "bg-red-500";
+                    textColor = "text-white";
+                    icon = "alert-circle";
+                    break;
+                case "gold":
+                    bgColor = "bg-yellow-400";
+                    textColor = "text-slate-900";
+                    icon = "award";
+                    break;
+                default:
+                    bgColor = "bg-blue-500";
+                    textColor = "text-white";
+                    icon = "info";
+            }
+            
+            toast.className = `flex items-center p-4 rounded-lg shadow-lg ${bgColor} ${textColor} font-medium transform transition-all duration-300 translate-x-full opacity-0`;
+            toast.innerHTML = `
+                <i data-lucide="${icon}" class="w-5 h-5 mr-3"></i>
+                <span>${message}</span>
+            `;
+            dom.toastContainer.appendChild(toast);
+            lucide.createIcons();
+            
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove("translate-x-full", "opacity-0");
+            }, 10);
+
+            // Animate out
+            setTimeout(() => {
+                toast.classList.add("translate-x-full", "opacity-0");
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+        
+        function runConfetti() {
+            const container = document.getElementById('confetti-container');
+            for (let i = 0; i < 50; i++) {
+                const piece = document.createElement('div');
+                piece.className = 'confetti-piece';
+                const xStart = Math.random() * 100;
+                const xEnd = (Math.random() * 2) - 1; // -1 to 1
+                const rotateEnd = Math.random() * 720;
+                const color = ['#facc15', '#fde047', '#fff'][Math.floor(Math.random() * 3)];
+                
+                piece.style.left = `${xStart}vw`;
+                piece.style.backgroundColor = color;
+                piece.style.setProperty('--x-end', xEnd);
+                piece.style.setProperty('--rotate-end', rotateEnd);
+                
+                container.appendChild(piece);
+                
+                setTimeout(() => {
+                    piece.remove();
+                }, 3000);
+            }
+        }
+
+        // Call createIcons once on load for static icons
+        lucide.createIcons();
+        
+    </script>
+
+</body>
+</html>
